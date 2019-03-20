@@ -1,0 +1,229 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Let's see what we need to do.
+1. Form a window containing 500 tickers for each quarter.
+(To save memory, we can use a function to decide in a certain quarter, 
+what's the stock list for SP500.)
+2. Manage the IBES forecast feature.
+3. Manage CRSP feature and do calculation.
+3. Store them and prepare for regression.
+
+```{r}
+# options(warn=-1)
+library(writexl)
+library(readxl)
+library(dplyr)
+library(reshape2)
+library(ggcorrplot)
+```
+
+Import datasets.
+
+```{r}
+DateRange = readxl::read_excel("D:\\data\\Capstone\\Data\\Valid date range.xlsx")
+DateRange$thru[is.na(DateRange$thru)] <- 20190101
+
+CRSP = readxl::read_excel("D:\\data\\Capstone\\Data\\CRSP Features.xlsx")
+OHLC = readxl::read_excel("D:\\data\\Capstone\\Data\\OHLC_quarter.xlsx")
+LinkKey = readxl::read_excel("D:\\data\\Capstone\\Data\\LK.xlsx")
+
+```
+
+Variable statistics.
+
+```{r}
+# Plot the correlation heat map for fundamental factors.
+cormat = round(cor(subset(CRSP,select=c(MV,EV,DVY,EBITDA2EV,E2PFY0,B2P,S2EV)),use="complete.obs"),2)
+
+melted_cormat = melt(cormat)
+jpeg("CorHeatMap.jpg")
+ggcorrplot(cormat,hc.order=TRUE,type="upper",lab=TRUE)
+dev.off()
+
+CRSP_v1 = subset(CRSP,select=c(MV,EV,DVY,EBITDA2EV,E2PFY0,B2P,S2EV))
+# Now we examine the properties of selected features.
+##### NA values in each feature
+na_count = data.frame(sapply(CRSP_v1, function(y)
+sum(length(which(is.na(y))))))/nrow(CRSP_v1)
+names(na_count) = c("NA")
+
+# Plot histogram of NA values in column "P/E Ratio" in all the sheet_s elements
+jpeg("NA in factors.jpg",width = 600)
+barplot(t(na_count))
+dev.off()
+```
+
+```{r}
+# shift data
+shift <- function(x, n){
+  c(x[-(seq(n))], rep(NA, n))
+}
+
+example$z <- shift(example$z, 2)
+
+
+# rolling window regression.
+require(zoo)
+rollapply(zoo(allRegData),
+          width=262,
+          FUN = function(Z) 
+          { 
+             t = lm(formula=y~x, data = as.data.frame(Z), na.rm=T); 
+             return(t$coef) 
+          },
+          by.column=FALSE, align="right") 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Support Functions.
+```{r}
+# This function would return the consititute of SP500 with gvkey, ticker and cusip
+# during given start date and end date.
+SP_constitute = function(start_date,end_date){
+  temp = subset(DateRange, (DateRange$from< start_date)&(DateRange$thru>=end_date), 
+select=c(gvkey,co_tic,co_cusip))
+  temp
+}
+#### Test function.
+test = SP_constitute(19950101,19950331)
+
+
+
+# Provide corresponding keys from key given.
+GVKtoPERMNO = function(GVKEYs,LK){
+  LK[LK$gvkey %in% GVKEYs,]$LPERMNO
+}
+#### Test function.
+test1 = pull(LinkKey[sample(nrow(LinkKey[,1]), 10, replace=F),1])
+test2 = GVKtoPERMNO(test1,LinkKey)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Data Clean Part.
+
+# Data clean process for CRSP
+```{r}
+# In this part, we input the CRSP quarterly data and reform them into features.
+CRSP_ori = readxl::read_excel("D:\\data\\Capstone\\Data\\CRSP Quarterly data.xlsx")
+
+CRSP_feature = subset(CRSP_ori,select=c(GVKEY,datadate,fyearq,fqtr))
+
+CRSP_feature$MV = CRSP_ori$cshoq*CRSP_ori$prccq
+
+CRSP_feature$EV = CRSP_feature$MV + CRSP_ori$dlcq + CRSP_ori$dlttq + CRSP_ori$pstkq - CRSP_ori$cheq
+
+CRSP_feature$tax_rate = CRSP_ori$txtq/CRSP_ori$piq
+
+CRSP_ori$CFO = c(NA,diff(CRSP_ori$oancfy, lag=1))
+CRSP_feature$CFO2EV = CRSP_ori$CFO + (CRSP_ori$xintq*(1-CRSP_feature$tax_rate))
+
+CRSP_ori$ASSETS = CRSP_ori$ceqq + CRSP_ori$dlcq + CRSP_ori$dlttq + CRSP_ori$pstkq - CRSP_ori$cheq
+CRSP_feature$RONA = (CRSP_ori$ibq+(CRSP_ori$xintq*(1-CRSP_feature$tax_rate)))/CRSP_ori$ASSETS
+
+CRSP_ori$EBITDA = CRSP_ori$saleq - CRSP_ori$cogsq - CRSP_ori$xsgaq
+CRSP_feature$EBITDA2EV = CRSP_ori$EBITDA/CRSP_feature$EV
+
+CRSP_feature$E2PFY0 = CRSP_ori$ibcomq/CRSP_feature$MV
+
+CRSP_feature$BB2P = (CRSP_ori$dvy + CRSP_ori$prstkcy-CRSP_ori$sstky)/CRSP_feature$MV
+
+CRSP_ori$EQ_REPO = CRSP_ori$prstkcy - CRSP_ori$sstky
+CRSP_ori$DEBT_REPO = CRSP_ori$dltry - CRSP_ori$dlcchy - CRSP_ori$dltisy
+CRSP_feature$BB2EV = (CRSP_ori$dvy + CRSP_ori$EQ_REPO - CRSP_ori$DEBT_REPO)/CRSP_feature$EV
+
+CRSP_feature$B2P = CRSP_ori$ceqq/CRSP_feature$MV
+
+CRSP_feature$S2EV = CRSP_ori$saleq/CRSP_feature$EV
+
+CRSP_feature$DVY = CRSP_ori$dvy
+# We save the features thus we don't need to recalculate it everytime.
+writexl::write_xlsx(CRSP_feature, path="D:\\data\\Capstone\\Data\\CRSP Features.xlsx", col_names=TRUE)
+```
+# Data clean process for OHLC
+```{r}
+# Now we prepare the OHLC prices for these stocks.
+OHLC_ori = readxl::read_excel("D:\\data\\Capstone\\Data\\OHLCV.xlsx")
+temp = as.character(OHLC_ori$date)
+OHLC_ori$month = as.numeric(substr(temp, start=5,stop=6))
+OHLC_ori$day = as.numeric(substr(temp, start=7,stop=8))
+
+OHLC_v1 = subset(OHLC_ori, (OHLC_ori$month %in% c(3,6,9,12))&(OHLC_ori$day>=28))
+
+# Now we wish to pick out the last valid record in 3,6,9,12 month.
+OHLC_v1$ym = substr(as.character(OHLC_v1$date), start=1,stop=6)
+
+OHLC_final = OHLC_v1 %>%
+  group_by(PERMNO) %>%
+  group_by(ym) %>%
+  top_n(-1,day)
+
+# We save the results thus we don't need to recalculate it everytime.
+writexl::write_xlsx(OHLC_final, path="D:\\data\\Capstone\\Data\\OHLC_quarter.xlsx", col_names=TRUE)
+```
+# Data clean process for LinkKey
+```{r}
+LinkKey = readxl::read_excel("D:\\data\\Capstone\\Data\\LinkKey.xlsx")
+LK_v1 = distinct(subset(LinkKey, select=c(gvkey,tic,cusip,LPERMNO)))
+# We save the results thus we don't need to recalculate it everytime.
+writexl::write_xlsx(LK_v1, path="D:\\data\\Capstone\\Data\\LK.xlsx", col_names=TRUE)
+```
