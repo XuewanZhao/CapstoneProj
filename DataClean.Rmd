@@ -31,6 +31,87 @@ LinkKey = readxl::read_excel("D:\\data\\Capstone\\Data\\LK.xlsx")
 
 ```
 
+Support Functions.
+```{r}
+# This function would return the consititute of SP500 with gvkey, ticker and cusip
+# during given start date and end date.
+SP_constitute = function(start_date,end_date){
+  temp = subset(DateRange, (DateRange$from<= start_date)&(DateRange$thru>=end_date), 
+select=c(gvkey,co_tic,co_cusip))
+  temp
+}
+#### Test function.
+# test = SP_constitute(19950101,19950331)
+
+# This function would be used to transform year,quarter to yyyymmdd format.
+TransYQtoDate = function(year,qtr){
+  year*10000 + qtr*3*100 + 31
+}
+
+# This function would determine the lookback period for a certain quarter.
+Lookback = function(year,qtr){
+  if(qtr==1){
+    c(year-6,4,year-1,4)
+  }else{
+    c(year-5,qtr-1,year,qtr-1)
+  }
+}
+
+# Provide corresponding keys from key given.
+GVKtoPERMNO = function(GVKEYs,LK){
+  NList = subset(LK,(LK$GVKEY %in% GVKEYs),select = c(GVKEY,PERMNO))
+  NList
+}
+#### Test function.
+# test1 = pull(LinkKey[sample(nrow(LinkKey[,1]), 10, replace=F),1])
+# test2 = GVKtoPERMNO(test1,LinkKey)
+
+# Do linear regression and prediction of the return in next quarter.
+LRP = function(df,Pred){
+  x = df[1:20,]
+  x = x[complete.cases(x),]
+  y = df[21,]
+  y = y[complete.cases(y),]
+  Pred = data.frame(matrix(ncol = 3, nrow = 0))
+  names(Pred)<-c("GVKEY","Pred","Actual")
+  if((nrow(x)>5)&(nrow(y))){
+    ols.fit = lm(formula = RET~MV+DVY+E2PFY0+B2P+S2EV,data = x)
+    Pred[1,] = c(y$GVKEY,predict(ols.fit,y),y$RET)
+    Pred
+  }else{
+    Pred[1,] = c(df[1,]$GVKEY,NA,NA)
+    Pred
+  }
+}
+#### Test function.
+# df = CRSP_cur[CRSP_cur$GVKEY==1177,]
+# LRP(df)
+
+# Select out records in certain quarter.
+Sub_qtr_rec = function(df,sp500, lkbk,yr,qtr){
+  subset(df,(df$GVKEY %in% sp500$gvkey)&(df$DATE>TransYQtoDate(lkbk[1],lkbk[2]))&(df$DATE<=TransYQtoDate(yr,qtr)))
+}
+
+# Select out stocks which are included in both feature dataset and return dataset.
+Common_stk = function(feature,ret){
+  Complete_info = intersect(feature$GVKEY,ret$GVKEY)
+  ret = subset(ret,(ret$GVKEY %in% Complete_info))
+  feature = subset(feature,(feature$GVKEY %in% Complete_info))
+  # Now we need to match the number of records.
+  Complete_info_v1 = Complete_info[table(feature$GVKEY)==table(ret$GVKEY)]
+  ret = subset(ret,(ret$GVKEY %in% Complete_info_v1))
+  feature = subset(feature,(feature$GVKEY %in% Complete_info_v1))
+  list(feature,ret)
+}
+
+# Given the aim quarter of features, calculate the aim quarter of return.
+QFtoQR = function(fyr,fqtr){
+  test_y_r = fyr + floor((fqtr+3)/5)
+  test_q_r = if(fqtr==1) 4 else ((fqtr+3)%%4)
+  c(test_y_r,test_q_r)
+}
+```
+
 Variable statistics.
 
 ```{r}
@@ -53,88 +134,53 @@ names(na_count) = c("NA")
 jpeg("NA in factors.jpg",width = 600)
 barplot(t(na_count))
 dev.off()
+
+# Final Subset to screen the stocks with 5 selected features.
+CRSP_F = subset(CRSP,select=c(GVKEY,DATE,MV,DVY,E2PFY0,B2P,S2EV))
 ```
+
+# Main function for fundamental factor stock selection.
 
 ```{r}
-# shift data
-shift <- function(x, n){
-  c(x[-(seq(n))], rep(NA, n))
+test_y_f = 2003
+test_q_f = 3
+
+# Main function:
+#   Given a certain quarter for features, this function would return the prediction of stock return in corresponding quarter (2 quarters' later), with lookback period as 20 quarters.
+Feature_Pred = function(test_y_f,test_q_f){
+  test_r = QFtoQR(test_y_f,test_q_f)
+  
+  #### 1. Select out stocks available during certain period.
+  lkbk_f = Lookback(test_y_f,test_q_f)
+  lkbk_r = Lookback(test_r[1],test_r[2])
+  SP500_list_gvkey = SP_constitute(TransYQtoDate(lkbk_f[1],lkbk_f[2]),TransYQtoDate(test_r[1],test_r[2]))
+  
+  #### 2. Select out and match the CRSP data and return of stocks from OHLC.
+  CRSP_cur = Sub_qtr_rec(CRSP_F,SP500_list_gvkey,lkbk_f,test_y_f,test_q_f)
+  OHLC_cur = Sub_qtr_rec(OHLC,SP500_list_gvkey,lkbk_r,test_y_r,test_q_r)
+  
+  #### 3. Then we could merge these two dataframes.
+  # Firstly select out available stocks in each dataset.
+  fea_ret = Common_stk(CRSP_cur,OHLC_cur)
+  # Sort the records and then add them into one single dataframe.
+  OHLC_cur = fea_ret[[2]][with(fea_ret[[2]], order(GVKEY, ym)),]
+  CRSP_cur = fea_ret[[1]][with(fea_ret[[1]], order(GVKEY, DATE)),]
+  CRSP_cur$RET = OHLC_cur$RET
+  
+  #### 4. We backtest each stock and predict the performance of next period.
+  
+  Pred = CRSP_cur %>%
+    group_by(GVKEY) %>%
+    do(LRP(.))
+  
+  # Now we get the prediction of return in next quarter and actual return.
+  # Thus we can evaluate the performance of our model.
+  Pred
 }
 
-example$z <- shift(example$z, 2)
 
-
-# rolling window regression.
-require(zoo)
-rollapply(zoo(allRegData),
-          width=262,
-          FUN = function(Z) 
-          { 
-             t = lm(formula=y~x, data = as.data.frame(Z), na.rm=T); 
-             return(t$coef) 
-          },
-          by.column=FALSE, align="right") 
+ 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Support Functions.
-```{r}
-# This function would return the consititute of SP500 with gvkey, ticker and cusip
-# during given start date and end date.
-SP_constitute = function(start_date,end_date){
-  temp = subset(DateRange, (DateRange$from< start_date)&(DateRange$thru>=end_date), 
-select=c(gvkey,co_tic,co_cusip))
-  temp
-}
-#### Test function.
-test = SP_constitute(19950101,19950331)
-
-
-
-# Provide corresponding keys from key given.
-GVKtoPERMNO = function(GVKEYs,LK){
-  LK[LK$gvkey %in% GVKEYs,]$LPERMNO
-}
-#### Test function.
-test1 = pull(LinkKey[sample(nrow(LinkKey[,1]), 10, replace=F),1])
-test2 = GVKtoPERMNO(test1,LinkKey)
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -196,34 +242,43 @@ CRSP_feature$B2P = CRSP_ori$ceqq/CRSP_feature$MV
 CRSP_feature$S2EV = CRSP_ori$saleq/CRSP_feature$EV
 
 CRSP_feature$DVY = CRSP_ori$dvy
+
+CRSP_feature$DATE = TransYQtoDate(CRSP_feature$fyearq,CRSP_feature$fqtr)
+
 # We save the features thus we don't need to recalculate it everytime.
 writexl::write_xlsx(CRSP_feature, path="D:\\data\\Capstone\\Data\\CRSP Features.xlsx", col_names=TRUE)
 ```
 # Data clean process for OHLC
 ```{r}
 # Now we prepare the OHLC prices for these stocks.
-OHLC_ori = readxl::read_excel("D:\\data\\Capstone\\Data\\OHLCV.xlsx")
-temp = as.character(OHLC_ori$date)
+OHLC_ori = readxl::read_excel("D:\\data\\Capstone\\Data\\OHLCV_v1.xlsx")
+temp = as.character(OHLC_ori$DATE)
 OHLC_ori$month = as.numeric(substr(temp, start=5,stop=6))
 OHLC_ori$day = as.numeric(substr(temp, start=7,stop=8))
 
 OHLC_v1 = subset(OHLC_ori, (OHLC_ori$month %in% c(3,6,9,12))&(OHLC_ori$day>=28))
 
 # Now we wish to pick out the last valid record in 3,6,9,12 month.
-OHLC_v1$ym = substr(as.character(OHLC_v1$date), start=1,stop=6)
+OHLC_v1$ym = substr(as.character(OHLC_v1$DATE), start=1,stop=6)
 
 OHLC_final = OHLC_v1 %>%
   group_by(PERMNO) %>%
   group_by(ym) %>%
   top_n(-1,day)
 
+OHLC_final = OHLC_final %>%
+  group_by(GVKEY) %>%
+  mutate(RET = (c(CLOSE[-(seq(1))], rep(NA, 1))/CLOSE - 1))
+
 # We save the results thus we don't need to recalculate it everytime.
 writexl::write_xlsx(OHLC_final, path="D:\\data\\Capstone\\Data\\OHLC_quarter.xlsx", col_names=TRUE)
 ```
 # Data clean process for LinkKey
 ```{r}
-LinkKey = readxl::read_excel("D:\\data\\Capstone\\Data\\LinkKey.xlsx")
+LinkKey = readxl::read_excel("D:\\data\\Capstone\\Data\\LinkKey_v2.xlsx")
 LK_v1 = distinct(subset(LinkKey, select=c(gvkey,tic,cusip,LPERMNO)))
+names(LK_v1)[names(LK_v1) == 'LPERMNO'] = 'PERMNO'
+names(LK_v1)[names(LK_v1) == 'gvkey'] = 'GVKEY'
 # We save the results thus we don't need to recalculate it everytime.
 writexl::write_xlsx(LK_v1, path="D:\\data\\Capstone\\Data\\LK.xlsx", col_names=TRUE)
 ```
