@@ -1,0 +1,244 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+Let's see what we need to do.
+1. Form a window containing 500 tickers for each quarter.
+(To save memory, we can use a function to decide in a certain quarter, 
+what's the stock list for SP500.)
+2. Manage the IBES forecast feature.
+3. Manage CRSP feature and do calculation.
+3. Store them and prepare for regression.
+
+```{r}
+# options(warn=-1)
+library(writexl)
+library(readxl)
+library(dplyr)
+library(reshape2)
+library(ggcorrplot)
+library(ggplot2)
+```
+
+Import datasets.
+
+```{r}
+date_range <- readxl::read_excel("D:\\data\\Capstone\\Data\\Valid_date_range.xlsx")
+date_range$thru[is.na(date_range$thru)] <- 20190101
+
+crsp <- readxl::read_excel("D:\\data\\Capstone\\Data\\CRSP_Features.xlsx")
+ohlc <- readxl::read_excel("D:\\data\\Capstone\\Data\\OHLC_quarter.xlsx")
+link_key <- readxl::read_excel("D:\\data\\Capstone\\Data\\LK.xlsx")
+```
+
+Support Functions.
+```{r}
+# This function would return the consititute of SP500 with gvkey, ticker and cusip
+# during given start date and end date.
+get_SPlist <- function(start_date, end_date) {
+  temp <- subset(date_range, (date_range$from <= start_date) & (date_range$thru >= end_date),
+    select = c(gvkey, co_tic, co_cusip)
+  )
+  temp
+}
+#### Test function.
+# test = get_SPlist(19950101,19950331)
+
+# This function would be used to transform year,quarter to yyyymmdd format.
+trans_YQ_to_date <- function(year, qtr) {
+  year * 10000 + qtr * 3 * 100 + 31
+}
+
+# This function would determine the lookback period for a certain quarter.
+get_lkbk_period <- function(year, qtr) {
+  if (qtr == 1) {
+    c(year - 6, 4, year - 1, 4)
+  } else {
+    c(year - 5, qtr - 1, year, qtr - 1)
+  }
+}
+
+# Provide corresponding keys from key given.
+trans_gvk_to_permno <- function(gvkeys, LK) {
+  NList <- subset(LK, (LK$gvkey %in% gvkeys), select = c(gvkey, permno))
+  NList
+}
+#### Test function.
+# test1 = pull(link_key[sample(nrow(link_key[,1]), 10, replace=F),1])
+# test2 = trans_gvk_to_permno(test1,link_key)
+
+# Do linear regression and prediction of the return in next quarter.
+reg_pred <- function(df, pred) {
+  x <- df[1:20, ]
+  x <- x[complete.cases(x), ]
+  y <- df[21, ]
+  y <- y[complete.cases(y), ]
+  pred <- data.frame(matrix(ncol = 3, nrow = 0))
+  names(pred) <- c("gvkey", "pred", "actual")
+  if ((nrow(x) > 5) & (nrow(y))) {
+    ols.fit <- lm(formula = ret ~ mv + dvy + e2pfy0 + b2p + s2ev, data = x)
+    pred[1, ] <- c(y$gvkey, predict(ols.fit, y), y$ret)
+    pred
+  } else {
+    pred[1, ] <- c(df[1, ]$gvkey, NA, NA)
+    pred
+  }
+}
+#### Test function.
+# df = crsp_cur[crsp_cur$gvkey==1177,]
+# reg_pred(df)
+
+# Select out records in certain quarter.
+sub_qtr_rec <- function(df, sp500, lkbk, yr, qtr) {
+  subset(df, (df$gvkey %in% sp500$gvkey) & (df$date > trans_YQ_to_date(lkbk[1], lkbk[2])) & (df$date <= trans_YQ_to_date(yr, qtr)))
+}
+
+# Select out stocks which are included in both feature dataset and return dataset.
+get_common_stk <- function(feature, ret) {
+  complete_info <- intersect(feature$gvkey, ret$gvkey)
+  ret <- subset(ret, (gvkey %in% complete_info))
+  feature <- subset(feature, (gvkey %in% complete_info))
+  # Now we need to match the number of records.
+  complete_info_v1 <- complete_info[table(feature$gvkey) == table(ret$gvkey)]
+  ret <- subset(ret, (gvkey %in% complete_info_v1))
+  feature <- subset(feature, (gvkey %in% complete_info_v1))
+  list(feature, ret)
+}
+
+# Given the aim quarter of features, calculate the aim quarter of return.
+trans_FQ_to_RQ <- function(fyr, fqtr) {
+  test_y_r <- fyr + floor((fqtr + 3) / 5)
+  test_q_r <- if (fqtr == 1) 4 else ((fqtr + 3) %% 4)
+  c(test_y_r, test_q_r)
+}
+```
+
+Variable statistics.
+
+```{r}
+# Plot the correlation heat map for fundamental factors.
+cormat <- round(cor(subset(crsp, select = c(mv, ev, dvy, ebitda2ev, e2pfy0, b2p, s2ev)), use = "complete.obs"), 2)
+
+melted_cormat <- melt(cormat)
+jpeg("CorHeatMap.jpg")
+ggcorrplot(cormat, hc.order = TRUE, type = "upper", lab = TRUE)
+dev.off()
+
+crsp_v1 <- subset(crsp, select = c(mv, ev, dvy, ebitda2ev, e2pfy0, b2p, s2ev))
+# Now we examine the properties of selected features.
+##### NA values in each feature
+na_count <- data.frame(sapply(crsp_v1, function(y)
+  sum(length(which(is.na(y)))))) / nrow(crsp_v1)
+names(na_count) <- c("NA")
+
+# Plot histogram of NA values in column "P/E Ratio" in all the sheet_s elements
+jpeg("NA_in_factors.jpg", width = 600)
+barplot(t(na_count))
+dev.off()
+
+# Final Subset to screen the stocks with 5 selected features.
+crsp_f <- subset(crsp, select = c(gvkey, date, mv, dvy, e2pfy0, b2p, s2ev))
+```
+
+Main function for fundamental factor stock selection.
+
+```{r}
+# Main function:
+#   Given a certain quarter for features, this function would return the prediction of stock return in corresponding quarter (2 quarters' later), with lookback period as 20 quarters.
+screen_fundamental <- function(test_y_f, test_q_f) {
+  test_r <- trans_FQ_to_RQ(test_y_f, test_q_f)
+
+  #### 1. Select out stocks available during certain period.
+  lkbk_f <- get_lkbk_period(test_y_f, test_q_f)
+  lkbk_r <- get_lkbk_period(test_r[1], test_r[2])
+  SP500_list_gvkey <- get_SPlist(trans_YQ_to_date(lkbk_f[1], lkbk_f[2]), trans_YQ_to_date(test_r[1], test_r[2]))
+
+  #### 2. Select out and match the CRSP data and return of stocks from OHLC.
+  crsp_cur <- sub_qtr_rec(crsp_f, SP500_list_gvkey, lkbk_f, test_y_f, test_q_f)
+  ohlc_cur <- sub_qtr_rec(ohlc, SP500_list_gvkey, lkbk_r, test_r[1], test_r[2])
+
+  #### 3. Then we could merge these two dataframes.
+  # Firstly select out available stocks in each dataset.
+  fea_ret <- get_common_stk(crsp_cur, ohlc_cur)
+  # Sort the records and then add them into one single dataframe.
+  ohlc_cur <- fea_ret[[2]][with(fea_ret[[2]], order(gvkey, ym)), ]
+  crsp_cur <- fea_ret[[1]][with(fea_ret[[1]], order(gvkey, date)), ]
+  crsp_cur$ret <- ohlc_cur$ret
+
+  #### 4. We backtest each stock and predict the performance of next period.
+
+  pred <- crsp_cur %>%
+    group_by(gvkey) %>%
+    do(reg_pred(.))
+
+  # Now we get the prediction of return in next quarter and actual return.
+  # Thus we can evaluate the performance of our model.
+  pred
+}
+
+#### Test our function.
+# test_y_f = 2003
+# test_q_f = 3
+#
+# temp = screen_fundamental(test_y_f,test_q_f)
+
+# evaluate_prediction function.
+#   As we could have the prediction and actual returns from our main function, screen_fundamental, we want to examine the performance of our model. Here we would use 2 methods:
+#     1. MSE of prediction and actual return.
+#     2. Performance of selected stocks according to prediction and the equally weighted benchmark portfolio.
+evaluate_prediction <- function(df) {
+  mse <- mean((df$pred - df$actual)^2, na.rm = TRUE)
+  r2 <- 1 - mse / mean((df$actual - mean(df$actual, na.rm = TRUE))^2,
+    na.rm = TRUE
+  )
+  temp <- df[complete.cases(df), ]
+  temp <- temp[with(temp, order(pred)), ]
+  # Equally weighted investment return.
+  benchmark <- mean(temp$actual)
+  n <- as.integer(nrow(temp) * 0.2)
+  mdl <- mean(tail(temp, n)$actual) - mean(head(temp, n)$actual)
+  c(mse, r2, benchmark, mdl)
+}
+```
+
+Rolling screening and evaluate the performance of our linear model.
+
+```{r}
+# Check if there is 500 stocks in each quarter.
+years <- c(1998:2018)
+qtrs <- c(1:4)
+last_ <- 19980101
+stock_num <- data.frame(
+  yr = integer(),
+  qtr = integer(),
+  num = integer()
+)
+for (y in years) {
+  for (q in qtrs) {
+    cur_ <- trans_YQ_to_date(y, q)
+    const_ <- get_SPlist(last_, cur_)
+    stock_num[nrow(stock_num) + 1, ] <- list(y, q, nrow(const_))
+    last_ <- cur_
+  }
+}
+jpeg("Num of SP500.jpg")
+plot(stock_num$yr + 0.25 * stock_num$qtr, stock_num$num, main = "Number of stocks in SP500", xlab = "Time", ylab = "# of stocks")
+
+# Now we could test our model, and store the results.
+res <- data.frame(
+  yr = integer(), qtr = integer(),
+  MSE = numeric(), R2 = numeric(),
+  BMK = numeric(), MDL = numeric()
+)
+
+yrs <- c(2003:2018)
+for (y in yrs) {
+  for (q in qtrs) {
+    pred_yq <- screen_fundamental(y, q)
+    res_yq <- evaluate_prediction(pred_yq)
+    res[nrow(res) + 1, ] <- c(y, q, res_yq)
+  }
+}
+```
+
+
