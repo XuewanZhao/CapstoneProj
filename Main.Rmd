@@ -221,24 +221,57 @@ for (y in years) {
     last_ <- cur_
   }
 }
-jpeg("Num of SP500.jpg")
+jpeg("Num_of_SP500.jpg")
 plot(stock_num$yr + 0.25 * stock_num$qtr, stock_num$num, main = "Number of stocks in SP500", xlab = "Time", ylab = "# of stocks")
+```
 
+Fundamental screening, in sample test.
+
+```{r}
 # Now we could test our model, and store the results.
-res <- data.frame(
+in_sample <- data.frame(
   yr = integer(), qtr = integer(),
   MSE = numeric(), R2 = numeric(),
   BMK = numeric(), MDL = numeric()
 )
 
-yrs <- c(2003:2018)
-for (y in yrs) {
+in_sample_yrs <- c(2003:2008)
+for (y in in_sample_yrs) {
   for (q in qtrs) {
     pred_yq <- screen_fundamental(y, q)
     res_yq <- evaluate_prediction(pred_yq)
-    res[nrow(res) + 1, ] <- c(y, q, res_yq)
+    in_sample[nrow(in_sample) + 1, ] <- c(y, q, res_yq)
   }
 }
+
+tiff("In_sample_qtrly_return.jpg", units="in", width=6, height=4, res=300)
+ggplot(in_sample, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = BMK, colour = "BMK")) + 
+  geom_line(aes(y = MDL, colour = "MDL")) + 
+  labs(x = "Time", y = "Quarterly return") + 
+  ggtitle("In sample test from 2003 to 2008") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black"))
+dev.off()
+
+tiff("In_sample_cumu_return.jpg", units="in", width=6, height=4, res=300)
+ggplot(in_sample, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = cumsum(BMK), colour = "BMK")) + 
+  geom_line(aes(y = cumsum(MDL), colour = "MDL")) + 
+  labs(x = "Time", y = "Cumulative return") + 
+  ggtitle("In sample test from 2003 to 2008") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black"))
+dev.off()
+
+tiff("In_sample_r2.jpg", units="in", width=6, height=4, res=300)
+ggplot(in_sample, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = R2, colour = "R2")) + 
+  labs(x = "Time", y = "Quarterly R2") + 
+  ggtitle("In sample test from 2003 to 2008") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black"))
+dev.off()
 ```
 
 

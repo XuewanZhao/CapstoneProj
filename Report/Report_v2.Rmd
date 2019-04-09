@@ -2,11 +2,14 @@
 title: "Report v2"
 author: "Xuewan Zhao"
 date: '`r format(Sys.time(), "%m/%d/%Y")`'
-output: pdf_document
-header-includes: \usepackage{graphicx}
-                 \usepackage{float}
-                 \usepackage{amsmath}
-                 \usepackage{threeparttable}  
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+header-includes: \usepackage{graphicx} 
+                 \usepackage{float} 
+                 \usepackage{amsmath} 
+                 \usepackage{threeparttable}
 ---
 
 ```{r setup, include=FALSE}
@@ -73,7 +76,7 @@ Fundamental factors discussed in this project are based on *Value Factors Do Not
 
 Fundamental factors are summarized in Table 1.
 
-\begin{table}[h]
+\begin{table}[H]
 \begin{center}
 \caption{Value Factor Description}
 \label{table1}
@@ -94,7 +97,7 @@ S2EV & Sales to Enterprise Value\\
 
 The correlations between the value factors are examined for all stocks in the S&P 500 universe throughout the back-test period. In linear models, a factor may be omitted from the linear regression if it is highly correlated with another factor. Avoiding highly correlated factors could also help avoid multi-collinearity, which results in inaccurate ordinary least squares regression results.
 
-\begin{figure}[h]
+\begin{figure}[H]
 \begin{center}
 \includegraphics[width=3in]{Lab//CorHeatMap.jpg}
 \caption{Factor Correlations}
@@ -104,7 +107,7 @@ The correlations between the value factors are examined for all stocks in the S&
 
 As we can see from the heat map, two pairs (EV and MV, S2E and EBITDA2EV) are highly correlated, which makes sense in the stock market. 
 
-\begin{figure}[h]
+\begin{figure}[H]
 \begin{center}
 \includegraphics[width=3in]{Lab//NA_in_factors.jpg}
 \caption{Factors' NA Percentages}
@@ -118,7 +121,7 @@ As a result, we would omit EV in the following analysis in favor of the MV facto
 
 The constitution of S&P 500 stocks keeps changing, as companies would enter and exit the stock market. In our model, we are going to use historical S&P 500 constitutions, which could help avoid survivor bias. Some stocks do not exists anymore and the data is missing in CRSP/Compustat database. However, as we can see below, most stocks are still recorded and available.
 
-\begin{figure}[h]
+\begin{figure}[H]
 \begin{center}
 \includegraphics[width=3in]{Lab//Num_of_SP500.jpg}
 \caption{Number of S\&P 500 stocks in each quarter}
@@ -141,16 +144,16 @@ After selecting the stocks, there are also two straight ways to trade in the mar
 2.	Long the top stocks, short the bottom stocks which makes us market(dollar) neutral.
 
 Ian L. Kaplan has tested these two ways in *Value Factors Do Not Forecast Returns for S&P 500 Stocks*, there are some interesting conclusions could be referred to here.
-1.	Single factor ranking model performs worse than multi-factor model.
-2.	Long only portfolio performs than Long/Short Portfolio.
+1.	Multi-factor ranking model performs better than single factor model.
+2.	Long/Short Portfolio performs better than long only portfolio.
 
-Thus, in this project, we are going to use linear multi-factor models to predict quarterly stock return. Then we would pick top and bottom 10 percent stocks to construct the portfolio.
+Thus, in this project, we are going to use linear multi-factor models to predict quarterly stock return. Then we would pick top and bottom 20 percent stocks to construct the portfolio. We are going to long the stocks which we expect would have high return in next quarter and short the stocks expected to have low returns. Meanwhile, the benchmark would be the portfolio which invests in all available stocks with equal weights.
 
 An important thing needs to be noticed is the releasement date of quarterly fundamental data would be two quarters' later than the quarter fundamental data belongs to. (i.e. the fundamental data for March 1998 would not be released before September 1998.)
 
 Assume current time spot is *t*, given previous quarterly fundamental factors in *t*, we are going to predict the quarterly return at time *t+1*. However, if we take the lag of information into consideration, we are actually using data in *t-3* to predict the quarterly return of *t+1*.
 
-\begin{figure}[h]
+\begin{figure}[H]
 \begin{center}
 \includegraphics[width=5in]{Lab//RegModel.png}
 \caption{Regression model illustration}
@@ -201,7 +204,7 @@ After determine the estimations at time t using last 20 quarters' (5 year) data,
 
 In this factor model, only technical factors would be used to predict the daily log return of stocks. 
 
-\begin{table}[h]
+\begin{table}[H]
 \begin{threeparttable}  
 \begin{center}
 \caption{Technical Factors}
@@ -231,7 +234,6 @@ CCI & Commodity Channel Index & \(\displaystyle \frac{(H_t+L_t+C_t)-3SMA_t}{0.04
 \end{threeparttable}
 \end{table}
 
-
 To be continued: Try to use return as weight? Or equal weighted?
 artificial neural network, support vector machines with polynomial and radial basis function kernels.
 
@@ -239,9 +241,49 @@ artificial neural network, support vector machines with polynomial and radial ba
 
 In this part, we are going to select 40 stocks which have best/worst performance according to our fundamental factor model and examine the performance of our model.
 
+Survivorship bias is the tendency to view the performance of existing investments in the market as a representative comprehensive sample. Survivorship bias can result in the overestimation of historical performance and general attributes of an investment. Survivorship bias may also be known as "survivor bias." 
 
+In this paper, as the constitution of S&P 500 is changing (Some companies would exit the market), there would be survivor bias if we use all stocks in the constitution as our stock pool. To avoid survivor bias, we are going to randomly select 2/3 available stocks as our base stock pool in each quarter. 
 
+In this part, we’ll use 1998-2008 data as in-sample period and 2009-2018 data as out-of-sample period. As financial crisis happened during 2007-2008, we are not going to separate these two years.
 
+Survivorship bias is the tendency to view the performance of existing investments in the market as a representative comprehensive sample. Survivorship bias can result in the overestimation of historical performance and general attributes of an investment. Survivorship bias may also be known as "survivor bias." 
+
+In this paper, as the constitution of S&P 500 is changing (Some companies would exit the market), there would be survivor bias if we use all stocks in the constitution as our stock pool. To avoid survivor bias, we are going to randomly select 2/3 available stocks as our base stock pool in each quarter. 
+
+In this part, we’ll use 1998-2008 data as in-sample period and 2009-2018 data as out-of-sample period. As financial crisis happened during 2007-2008, we are not going to separate these two years.
+
+Due to the property of our model, we need at least 5 years’ data lookback period. Thus, the earliest quarter could be predicted is first quarter of 2003.
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Fig5.jpg}
+\caption{In sample quarterly return}
+\label{figure5}
+\end{center}
+\end{figure}
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Fig6.jpg}
+\caption{In sample cumulative return}
+\label{figure6}
+\end{center}
+\end{figure}
+
+It’s interesting to see that the performance of our model always goes opposite with the benchmark. This observation is also supported by R-squared:
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Fig7.jpg}
+\caption{In sample R-squared}
+\label{figure7}
+\end{center}
+\end{figure}
+
+We can see, the r-square for each quarter is negative. Even that’s the case, we can take advantage of our in-sample test. In out-of-sample test, we are going to assume the stocks would tend to perform in opposite direction with our prediction. Then we would do the opposite trading: long stocks with low expected returns and short stocks with high expected returns.
+
+Another thing needs to be mentioned is: as we can see from results, the market volatiles during and after financial crisis period.
 
 
 
