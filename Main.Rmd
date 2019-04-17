@@ -10,7 +10,7 @@ what's the stock list for SP500.)
 3. Manage CRSP feature and do calculation.
 3. Store them and prepare for regression.
 
-```{r}
+```{r,,warning=FALSE}
 # options(warn=-1)
 library(writexl)
 library(readxl)
@@ -18,11 +18,13 @@ library(dplyr)
 library(reshape2)
 library(ggcorrplot)
 library(ggplot2)
+library(scales)
+library(aTSA)
 ```
 
 Import datasets.
 
-```{r}
+```{r,warning=FALSE}
 date_range <- readxl::read_excel("D:\\data\\Capstone\\Data\\Valid_date_range.xlsx")
 date_range$thru[is.na(date_range$thru)] <- 20190101
 
@@ -186,7 +188,11 @@ screen_fundamental <- function(test_y_f, test_q_f) {
 #   As we could have the prediction and actual returns from our main function, screen_fundamental, we want to examine the performance of our model. Here we would use 2 methods:
 #     1. MSE of prediction and actual return.
 #     2. Performance of selected stocks according to prediction and the equally weighted benchmark portfolio.
-evaluate_prediction <- function(df) {
+evaluate_prediction <- function(df_) {
+  # We do random selection on the stock pool to avoid survivor bias.
+  n = as.integer(nrow(df_) * 0.9)
+  df = df_[sample(nrow(df_), n), ]
+  
   mse <- mean((df$pred - df$actual)^2, na.rm = TRUE)
   r2 <- 1 - mse / mean((df$actual - mean(df$actual, na.rm = TRUE))^2,
     na.rm = TRUE
@@ -198,6 +204,34 @@ evaluate_prediction <- function(df) {
   n <- as.integer(nrow(temp) * 0.2)
   mdl <- mean(tail(temp, n)$actual) - mean(head(temp, n)$actual)
   c(mse, r2, benchmark, mdl)
+}
+
+# evaluate_prediction function v1.
+#   We long the stocks with low expectation and short the stocks with high expectation.
+evaluate_prediction_v1 <- function(df_) {
+  # We do random selection on the stock pool to avoid survivor bias.
+  n = as.integer(nrow(df_) * 0.9)
+  df = df_[sample(nrow(df_), n), ]
+  
+  mse <- mean((df$pred - df$actual)^2, na.rm = TRUE)
+  r2 <- 1 - mse / mean((df$actual - mean(df$actual, na.rm = TRUE))^2,
+    na.rm = TRUE
+  )
+  temp <- df[complete.cases(df), ]
+  temp <- temp[with(temp, order(pred)), ]
+  # Equally weighted investment return.
+  benchmark <- mean(temp$actual)
+  n <- as.integer(nrow(temp) * 0.2)
+  mdl <- -mean(tail(temp, n)$actual) + mean(head(temp, n)$actual)
+  c(mse, r2, benchmark, mdl)
+}
+
+# Information ratio calculation.
+#  We calculate the information ratio given the evaluation of our prediction.
+calc_IR <- function(pred){
+  attr(pred, "bmk_ir") <- mean(pred$BMK, na.rm = T) / sd(pred$BMK,na.rm = T)
+  attr(pred, "mdl_ir") <- mean(pred$MDL, na.rm = T) / sd(pred$MDL,na.rm = T)
+  pred
 }
 ```
 
@@ -221,15 +255,14 @@ for (y in years) {
     last_ <- cur_
   }
 }
-jpeg("Num_of_SP500.jpg")
+jpeg("Report//Lab//Num_of_SP500.jpg")
 plot(stock_num$yr + 0.25 * stock_num$qtr, stock_num$num, main = "Number of stocks in SP500", xlab = "Time", ylab = "# of stocks")
 ```
 
 Rolling screening and evaluate the performance of our linear model.
-
 Fundamental screening, in sample test.
 
-```{r}
+```{r,warning=FALSE}
 # Now we could test our model, and store the results.
 in_sample <- data.frame(
   yr = integer(), qtr = integer(),
@@ -254,7 +287,8 @@ ggplot(in_sample, aes(yr+0.25*qtr)) +
   labs(x = "Time", y = "Quarterly return") + 
   ggtitle("In sample test from 2003 to 2008") +
   theme(plot.title = element_text(hjust = 0.5),
-        panel.background = element_rect(fill = "white",color = "black"))
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
 dev.off()
 
 tiff("Report//Lab//In_sample_cumu_return.jpg", units="in", width = 6, height = 4, res = 125)
@@ -264,7 +298,8 @@ ggplot(in_sample, aes(yr+0.25*qtr)) +
   labs(x = "Time", y = "Cumulative return") + 
   ggtitle("In sample test from 2003 to 2008") +
   theme(plot.title = element_text(hjust = 0.5),
-        panel.background = element_rect(fill = "white",color = "black"))
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
 dev.off()
 
 tiff("Report//Lab//In_sample_r2.jpg", units="in", width = 6, height = 4, res = 125)
@@ -273,8 +308,296 @@ ggplot(in_sample, aes(yr+0.25*qtr)) +
   labs(x = "Time", y = "Quarterly R2") + 
   ggtitle("In sample test from 2003 to 2008") +
   theme(plot.title = element_text(hjust = 0.5),
-        panel.background = element_rect(fill = "white",color = "black"))
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
 dev.off()
 ```
 
+Re-test the in sample period.
+
+```{r,warning=FALSE}
+in_sample_v1 <- data.frame(
+  yr = integer(), qtr = integer(),
+  MSE = numeric(), R2 = numeric(),
+  BMK = numeric(), MDL = numeric()
+)
+
+for (y in in_sample_yrs) {
+  for (q in qtrs) {
+    pred_yq <- screen_fundamental(y, q)
+    res_yq <- evaluate_prediction_v1(pred_yq)
+    in_sample_v1[nrow(in_sample_v1) + 1, ] <- c(y, q, res_yq)
+  }
+}
+
+in_sample_v1 <- calc_IR(in_sample_v1)
+
+tiff("Report//Lab//In_sample_qtrly_return_v1.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(in_sample_v1, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = BMK, colour = "BMK")) + 
+  geom_line(aes(y = MDL, colour = "MDL")) + 
+  labs(x = "Time", y = "Quarterly return") + 
+  ggtitle("In sample test from 2003 to 2008") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+
+tiff("Report//Lab//In_sample_cumu_return_v1.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(in_sample_v1, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = cumsum(BMK), colour = "BMK")) + 
+  geom_line(aes(y = cumsum(MDL), colour = "MDL")) + 
+  labs(x = "Time", y = "Cumulative return") + 
+  ggtitle("In sample test from 2003 to 2008") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+```
+
+Now we test our model in out of sample period.
+
+```{r,warning=FALSE}
+
+
+# Now we could test our model, and store the results.
+out_sample <- data.frame(
+  yr = integer(), qtr = integer(),
+  MSE = numeric(), R2 = numeric(),
+  BMK = numeric(), MDL = numeric()
+)
+
+out_sample_yrs <- c(2009:2018)
+qtrs <- c(1:4)
+for (y in out_sample_yrs) {
+  for (q in qtrs) {
+    pred_yq <- screen_fundamental(y, q)
+    res_yq <- evaluate_prediction_v1(pred_yq)
+    out_sample[nrow(out_sample) + 1, ] <- c(y, q, res_yq)
+  }
+}
+
+out_sample <-  calc_IR(out_sample)
+
+tiff("Report//Lab//Out_sample_qtrly_return.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = BMK, colour = "BMK")) + 
+  geom_line(aes(y = MDL, colour = "MDL")) + 
+  labs(x = "Time", y = "Quarterly return") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+
+tiff("Report//Lab//Out_sample_cumu_return.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = cumsum(BMK), colour = "BMK")) + 
+  geom_line(aes(y = cumsum(MDL), colour = "MDL")) + 
+  labs(x = "Time", y = "Cumulative return") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+
+tiff("Report//Lab//Out_sample_r2.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = R2, colour = "R2")) + 
+  labs(x = "Time", y = "Quarterly R2") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+```
+
+```{r}
+attr(in_sample_v1,"bmk_ir")
+attr(in_sample_v1,"mdl_ir")
+attr(out_sample,"bmk_ir")
+attr(out_sample,"mdl_ir")
+```
+
+Verification part.
+
+Part1 : Late efficiency.
+```{r,warning=FALSE}
+# use most recent quarter as dependent variable
+
+trans_FQ_to_RQ_v1 <- function(fyr, fqtr) {
+  test_y_r <- fyr + floor((fqtr + 1) / 5)
+  test_q_r <- if (fqtr == 4) 1 else (fqtr + 1)
+  c(test_y_r, test_q_r)
+}
+
+screen_fundamental_v1 <- function(test_y_f, test_q_f) {
+  test_r <- trans_FQ_to_RQ_v1(test_y_f, test_q_f)
+
+  #### 1. Select out stocks available during certain period.
+  lkbk_f <- get_lkbk_period(test_y_f, test_q_f)
+  lkbk_r <- get_lkbk_period(test_r[1], test_r[2])
+  SP500_list_gvkey <- get_SPlist(trans_YQ_to_date(lkbk_f[1], lkbk_f[2]), trans_YQ_to_date(test_r[1], test_r[2]))
+
+  #### 2. Select out and match the CRSP data and return of stocks from OHLC.
+  crsp_cur <- sub_qtr_rec(crsp_f, SP500_list_gvkey, lkbk_f, test_y_f, test_q_f)
+  ohlc_cur <- sub_qtr_rec(ohlc, SP500_list_gvkey, lkbk_r, test_r[1], test_r[2])
+
+  #### 3. Then we could merge these two dataframes.
+  # Firstly select out available stocks in each dataset.
+  fea_ret <- get_common_stk(crsp_cur, ohlc_cur)
+  # Sort the records and then add them into one single dataframe.
+  ohlc_cur <- fea_ret[[2]][with(fea_ret[[2]], order(gvkey, ym)), ]
+  crsp_cur <- fea_ret[[1]][with(fea_ret[[1]], order(gvkey, date)), ]
+  crsp_cur$ret <- ohlc_cur$ret
+
+  #### 4. We backtest each stock and predict the performance of next period.
+
+  pred <- crsp_cur %>%
+    group_by(gvkey) %>%
+    do(reg_pred(.))
+
+  # Now we get the prediction of return in next quarter and actual return.
+  # Thus we can evaluate the performance of our model.
+  pred
+}
+
+# Now we could test our model, and store the results.
+out_sample_v1 <- data.frame(
+  yr = integer(), qtr = integer(),
+  MSE = numeric(), R2 = numeric(),
+  BMK = numeric(), MDL = numeric()
+)
+
+out_sample_yrs <- c(2009:2018)
+qtrs <- c(1:4)
+for (y in out_sample_yrs) {
+  for (q in qtrs) {
+    pred_yq <- screen_fundamental_v1(y, q)
+    res_yq <- evaluate_prediction(pred_yq)
+    out_sample_v1[nrow(out_sample_v1) + 1, ] <- c(y, q, res_yq)
+  }
+}
+
+out_sample_v1 <-  calc_IR(out_sample_v1)
+
+tiff("Report//Lab//Out_sample_qtrly_return_v1.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample_v1, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = BMK, colour = "BMK")) + 
+  geom_line(aes(y = MDL, colour = "MDL")) + 
+  labs(x = "Time", y = "Quarterly return") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+
+tiff("Report//Lab//Out_sample_cumu_return_v1.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample_v1, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = cumsum(BMK), colour = "BMK")) + 
+  geom_line(aes(y = cumsum(MDL), colour = "MDL")) + 
+  labs(x = "Time", y = "Cumulative return") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+
+tiff("Report//Lab//Out_sample_r2_v1.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample_v1, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = R2, colour = "R2")) + 
+  labs(x = "Time", y = "Quarterly R2") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+
+attr(out_sample_v1,"bmk_ir")
+attr(out_sample_v1,"mdl_ir")
+```
+
+Part2 : Mean reverting test.
+```{r}
+# ADF Test
+# main type 3, count the efficient p-value in each lag.
+
+ADF_results <- data.frame(
+  gvkey = integer(), lag_0 = integer(),
+  lag_1 = numeric(), lag_2 = numeric(),
+  lag_3 = numeric()
+)
+
+record_ADF <- function(df_1,df_2){
+  # df_1 : data.frame to store ADF results
+  # df_2 : data.frame which stores returns of stocks.
+  
+  stks = unique(df_2$gvkey)
+  
+  for(k in stks){
+    print(k)
+    temp <- df_2[df_2$gvkey == k,]
+    if(nrow(temp)>20){
+      res <- adf.test(temp$ret)[[3]][,3]
+      if(length(res)<4){
+        res[(length(res)+1):4] = NA
+      }
+      df_1[nrow(df_1) + 1, ] <- c(k,res) 
+    }
+  } 
+  df_1
+}
+
+ADF_results <- record_ADF(ADF_results,ohlc)
+
+# We count the number of stocks which has p-value less than 0.05.
+mean_rev_num = c()
+for(i in c(1:4)){
+  mean_rev_num = append(mean_rev_num,sum(ADF_results[,i+1] < 0.05, na.rm = T))
+}
+
+# We transform the number of stocks into percentage to make it comparable.
+mean_rev_num = mean_rev_num/nrow(ADF_results)
+
+# Plot the percentage.
+tiff("Report//Lab//mean_rev_pctg.jpg", units="in", width = 6, height = 4, res = 125)
+barplot(mean_rev_num, names.arg = c("lag0","lag1","lag2","lag3"), border="black", 
+        xlab = "Lag",ylab = "Percentage",
+        main = "Percentage of stocks proved mean reversion",ylim = c(0,1))
+abline(h = 0.8,col = "red",lty = 2, lwd = 2)
+dev.off()
+```
+
+Part3 : Bull market statistics.
+```{r}
+# 2009-2018 count positive return stocks number
+count_stk_num <- function(df){
+  data.frame(nrow(df),nrow(df[df$ret > 0,]))
+}
+
+out_sample_ohlc = ohlc[ohlc$ym > 200900,]
+
+pos_stk_num <- out_sample_ohlc %>%
+    group_by(ym) %>%
+    do(count_stk_num(.))
+names(pos_stk_num) = c("Quarter","Total","Pos")
+
+pos_stk_num$Percentage = pos_stk_num$Pos/pos_stk_num$Total
+
+tiff("Report//Lab//Pos_stock_ptg.jpg", units="in", width = 6, height = 4, res = 125)
+barplot(pos_stk_num$Percentage, names.arg = pos_stk_num$Quarter, border="black", 
+        xlab = "Quarter",ylab = "Percentage",
+        main = "Percentage of stocks with positive return",ylim = c(0,1))
+dev.off()
+
+# Plot the distribution of percentages.
+tiff("Report//Lab//Pos_stock_ptg_dist.jpg", units="in", width = 6, height = 4, res = 125)
+barplot(pos_stk_num[order(pos_stk_num$Percentage),]$Percentage, border="black", 
+        xlab = "Distribution",ylab = "Percentage",
+        main = "Percentage of stocks with positive return",ylim = c(0,1))
+abline(h = 0.5,col = "red",lty = 2, lwd = 2)
+dev.off()
+
+
+```
 
