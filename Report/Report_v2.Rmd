@@ -249,15 +249,13 @@ In this part, we’ll use 1998-2008 data as in-sample period and 2009-2018 data 
 
 Survivorship bias is the tendency to view the performance of existing investments in the market as a representative comprehensive sample. Survivorship bias can result in the overestimation of historical performance and general attributes of an investment. Survivorship bias may also be known as "survivor bias." 
 
-In this paper, as the constitution of S&P 500 is changing (Some companies would exit the market), there would be survivor bias if we use all stocks in the constitution as our stock pool. To avoid survivor bias, we are going to randomly select 2/3 available stocks as our base stock pool in each quarter. 
-
-In this part, we’ll use 1998-2008 data as in-sample period and 2009-2018 data as out-of-sample period. As financial crisis happened during 2007-2008, we are not going to separate these two years.
+**In sample test:**
 
 Due to the property of our model, we need at least 5 years’ data lookback period. Thus, the earliest quarter could be predicted is first quarter of 2003.
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=5in]{Lab//Fig5.jpg}
+\includegraphics[width=5in]{Lab//In_sample_qtrly_return.jpg}
 \caption{In sample quarterly return}
 \label{figure5}
 \end{center}
@@ -265,7 +263,7 @@ Due to the property of our model, we need at least 5 years’ data lookback peri
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=5in]{Lab//Fig6.jpg}
+\includegraphics[width=5in]{Lab//In_sample_cumu_return.jpg}
 \caption{In sample cumulative return}
 \label{figure6}
 \end{center}
@@ -275,7 +273,7 @@ It’s interesting to see that the performance of our model always goes opposite
 
 \begin{figure}[H]
 \begin{center}
-\includegraphics[width=5in]{Lab//Fig7.jpg}
+\includegraphics[width=5in]{Lab//In_sample_r2.jpg}
 \caption{In sample R-squared}
 \label{figure7}
 \end{center}
@@ -285,7 +283,118 @@ We can see, the r-square for each quarter is negative. Even that’s the case, w
 
 Another thing needs to be mentioned is: as we can see from results, the market volatiles during and after financial crisis period.
 
+There are some possible reasons why our prediction goes in the opposite direction against real situation:
 
+1.	Information already been realized in market. As we are trying to predict the return two quarters’ later, although the official reports are just released, the information in official reports may have already been acknowledged by the market through observations or other methods. Thus, the price movements indicated by previous quarterly reports are already realized. 
+
+2.	The price movements are mean reverting. This is consistent with the speculation above. This would explain why our r-square is always negative.
+
+**Verification:**
+We can verify our speculations by:
+1.	Use the most recent fundamental factors to predict the return in next quarter, i.e., ignoring the ‘two quarter’s lateness’ in real world. 
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//In_sample_qtrly_return_v1.jpg}
+\caption{In sample cumulative return v1}
+\label{figure8}
+\end{center}
+\end{figure}
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//In_sample_cumu_return_v1.jpg}
+\caption{In sample cumulative return v1}
+\label{figure9}
+\end{center}
+\end{figure}
+
+Once we changed our trading method and re-test the in-sample period, we’ll see this model performs pretty well.
+
+2.	Test the mean reverting property of stock returns.
+
+We do the augmented Dickey–Fuller test (ADF) to test the mean reversion property of stock returns. In this part, we collect the p-value of ADF statistics. Once p-value is smaller than 0.05, we recognize this stock as mean reverting. As there are different lags, we would present the percentage of mean reverting stocks with different each lag terms.
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//mean_rev_pctg.jpg}
+\caption{Percentage of mean reverting stocks}
+\label{figure10}
+\end{center}
+\end{figure}
+
+**Out of sample test:**
+
+Now we apply our model to out-of-sample period and check its performance.
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Out_sample_qtrly_return.jpg}
+\caption{In sample quarterly return}
+\label{figure11}
+\end{center}
+\end{figure}
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Out_sample_cumu_return.jpg}
+\caption{In sample cumulative return}
+\label{figure12}
+\end{center}
+\end{figure}
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Out_sample_r2.jpg}
+\caption{In sample R-squared}
+\label{figure13}
+\end{center}
+\end{figure}
+
+We can see that our portfolio generates less return, while its performance is less volatile. We can check the information ratio of our model and the benchmark portfolio. 
+
+\begin{table}[H]
+\begin{center}
+\caption{Comparasion of information ratio}
+\label{table1}
+\centering
+\begin{tabular}{l l l}\hline
+Information Ratio &	Benchmark	& Model \\ \hline
+In sample (2003-2008) &	0.09236724 & 0.3858518 \\
+Out sample (2009-2018) & 0.3303293 & 0.2384175 \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+If we refer to the 10-year performance of portfolios in the market, we can see our model beats 75% portfolios in the market. However, it can’t beat benchmark portfolio during out-of-sample period. There may be some possible reasons:
+
+1.	In bull market, most stocks are increasing, only pick top/bottom stocks are not suitable. For example, once we predict all stocks’ price would increase, we would not short any stocks.
+
+2.	This strategy suits in bear market, i.e., it would be with low risk meanwhile with low return. This speculation is consistent with its low volatility property, at the same time its information ratio is still good. 
+
+**Verification:**
+
+We can verify our speculations by:
+1.	Verify the performance of stocks during 2009-2018.
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Pos_stock_ptg.jpg}
+\caption{In sample R-squared}
+\label{figure14}
+\end{center}
+\end{figure}
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//Pos_stock_ptg_dist.jpg}
+\caption{In sample R-squared}
+\label{figure15}
+\end{center}
+\end{figure}
+
+We can see clearly from the distribution of the percentage of stocks which have positive return in each quarter, from 2009 to 2018, the whole market status should belong to bull market, which consists with our speculation.
 
 ### Portfolio trading
 
