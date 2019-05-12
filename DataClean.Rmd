@@ -2,6 +2,17 @@
 title: "Data Clean"
 output: html_notebook
 ---
+```{r}
+library(writexl)
+library(readxl)
+library(dplyr)
+library(reshape2)
+library(scales)
+library(aTSA)
+library(pracma)
+library(TTR)
+library(zoo)
+```
 
 This part contains the data cleaning part of capstone project, which is supervised by Prof. Jerzy.
 
@@ -80,3 +91,64 @@ names(lk_v1)[names(lk_v1) == "lpermno"] <- "permno"
 # We save the results thus we don't need to recalculate it everytime.
 writexl::write_xlsx(LK_v1, path = "D:\\data\\Capstone\\Data\\LK.xlsx", col_names = TRUE)
 ```
+# Calculate technical indicators.
+```{r}
+# import full OHLC data.
+ohlc_full <- readxl::read_excel("D:\\data\\Capstone\\Data\\OHLCV.xlsx")
+
+ohlc_full$close <- (ohlc_full$bid + ohlc_full$ask)/2
+
+tech_factors <- data.frame(
+  permno = integer(), date = integer(),
+  low = double(), high = double(),
+  vol = integer(), bid = double(),
+  ask = double(), open = double(),
+  close = double(), ret = double(), 
+  sma = double(),
+  ema = double(), mmt = double(),
+  fastK = double(), fastD = double(),
+  slowD = double(), rsi = double(),
+  macd = double(), lwr = double(),
+  adi = double(), cci = double()
+)
+
+for(s in unique(ohlc_full$permno)){
+  # slice dates
+  # calculate indicators
+  # attach them to a whole data.frame
+  temp = ohlc_full[ohlc_full$permno == s,]
+  temp = data.frame(na.fill(temp,'extend'))
+  n = nrow(temp)
+  temp$ret = c((temp[2:n, 9] - temp[1:(n-1), 9])/temp[1:(n-1), 9], NA)
+  temp$sma = movavg(temp$close,14)
+  temp$ema = movavg(temp$close,14,"e")
+  temp$mmt = c(rep(NA,14),diff(temp$close,14))
+  temp[,c('fastK','fastD','slowD')] = stoch(temp[,c('high','low','close')])
+  temp$rsi = RSI(temp$close)
+  temp$macd = MACD(temp$close)
+  x = (temp$high - temp$close)/(temp$high - temp$low)
+  temp$lwr = c(rep(NA,14),x[1:(nrow(temp)-14)])
+  temp$adi = williamsAD(temp[,c('high','low','close')])
+  temp$cci = CCI(temp[,c('high','low','close')])
+  
+  temp = na.omit(temp)
+  n  = nrow(temp)
+  m = nrow(tech_factors)
+  tech_factors = rbind(tech_factors,temp)
+}
+
+# We save the results thus we don't need to recalculate it everytime.
+writexl::write_xlsx(tech_factors, path = "D:\\data\\Capstone\\Data\\Tech_Factors.xlsx", col_names = TRUE)
+  
+```
+
+
+
+
+
+
+
+
+
+
+

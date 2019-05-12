@@ -398,11 +398,54 @@ We can see clearly from the distribution of the percentage of stocks which have 
 
 ### Portfolio trading
 
+As we have tested the performance of the strategy based on fundamental factors, we are going to test the performance of strategies based on technical factors. In this part, we will base on the results from above parts, i.e., we will use stocks selected by fundamental analysis. 
 
+We are going to use technical factors to predict daily return of stocks. Once we predict certain stock would have positive return, we will long this stock, vice versa. 
 
+\(\displaystyle r_{t+1} = \beta_t + \beta_oopen_t+\beta_cclose_t+\beta_llow_t+\beta_hhigh_t+\beta_vvol_t+\beta_ssma_t+\beta_eema_t+\beta_mmmt_t+\beta_{fk}fastK_t+\beta_{fd}fastD_t + \beta_{sd}slowD_t+\beta_rrsi_t+\beta_{macd}macd_t+\beta_{lwr}lwr_t+\beta_aadi_t+\beta_ccci_t\)
 
+To analyze the performance of technical factor model itself, we will compare the portfolio return with another benchmark portfolio. Benchmark portfolio would only long or short stocks in each quarter, which means there won’t be any daily adjustment on stock holding during a certain quarter period. 
+
+We test this model on the time period 2009 to 2018.
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//full_model.jpg}
+\caption{Out of sample quarterly return of technical factor model}
+\label{figure16}
+\end{center}
+\end{figure}
+
+\begin{figure}[H]
+\begin{center}
+\includegraphics[width=5in]{Lab//full_model_cumu.jpg}
+\caption{Out of sample cumulative return of technical factor model}
+\label{figure17}
+\end{center}
+\end{figure}
+
+As we can see, though we are getting negative return, technical factor model itself improves the performance of the portfolio selected by fundamental factor model.
+
+### Conclusion
+
+In this project, we get the following conclusions:
+
+1. Fundamental factor model could generate good information ratio.
+
+2. Fundamental factor model suits in bear market, i.e., it would be with low risk meanwhile with low return.
+
+3. Technical factor model does improve the performance of portfolio constructed based on fundamental factor model.
+
+Another thing needs to be mentioned is, though offical fundamental data would only be released two quarters later than referring quarter, the performance of companies in referring quarter could be analyzed based on other information sources in market. Thus, there would be late efficiency effect if we keep using two quarters' earlier fundamental factors to predict current quarter's performance.
 
 ### References
+
+1. Kaplan, I., 2014. Value Factors Do Not Forecast Returns for S&P 500 Stocks. Available at SSRN 2407303.
+
+2. Bohl, L., 2017. Stock Forecasting Fundamental Technical Factors.
+
+3. Zephyr. Information Ratio 
+  Retrieved from http://www.styleadvisor.com/resources/statfacts/information-ratio
 
 
 

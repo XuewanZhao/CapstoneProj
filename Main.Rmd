@@ -20,6 +20,8 @@ library(ggcorrplot)
 library(ggplot2)
 library(scales)
 library(aTSA)
+library(pracma)
+library(rstan)
 ```
 
 Import datasets.
@@ -29,8 +31,14 @@ date_range <- readxl::read_excel("D:\\data\\Capstone\\Data\\Valid_date_range.xls
 date_range$thru[is.na(date_range$thru)] <- 20190101
 
 crsp <- readxl::read_excel("D:\\data\\Capstone\\Data\\CRSP_Features.xlsx")
+
+# Final Subset to screen the stocks with 5 selected features.
+crsp_f <- subset(crsp, select = c(gvkey, date, mv, dvy, e2pfy0, b2p, s2ev))
+
 ohlc <- readxl::read_excel("D:\\data\\Capstone\\Data\\OHLC_quarter.xlsx")
 link_key <- readxl::read_excel("D:\\data\\Capstone\\Data\\LK.xlsx")
+
+tech_factors <- readxl::read_excel("D:\\data\\Capstone\\Data\\Tech_Factors.xlsx")
 ```
 
 Support Functions.
@@ -60,6 +68,15 @@ get_lkbk_period <- function(year, qtr) {
   }
 }
 
+# This function would determine the lookback period for a certain quarter(tech ver.).
+get_lkbk_period_tech <- function(year, qtr) {
+  if (qtr == 1) {
+    c(year - 1, 4)
+  } else {
+    c(year, qtr - 1)
+  }
+}
+
 # Provide corresponding keys from key given.
 trans_gvk_to_permno <- function(gvkeys, LK) {
   NList <- subset(LK, (LK$gvkey %in% gvkeys), select = c(gvkey, permno))
@@ -70,7 +87,7 @@ trans_gvk_to_permno <- function(gvkeys, LK) {
 # test2 = trans_gvk_to_permno(test1,link_key)
 
 # Do linear regression and prediction of the return in next quarter.
-reg_pred <- function(df, pred) {
+reg_pred <- function(df) {
   x <- df[1:20, ]
   x <- x[complete.cases(x), ]
   y <- df[21, ]
@@ -86,6 +103,31 @@ reg_pred <- function(df, pred) {
     pred
   }
 }
+
+# Do linear regression and prediction of the return in next quarter.
+reg_pred_tech <- function(df) {
+  pred <- data.frame(matrix(ncol = 3, nrow = 0))
+  names(pred) <- c("permno", "pred", "actual")
+  n = nrow(df)
+  if (n>31) {
+    for(i in c(31:n)){
+      x <- df[(i-30):(i-1), ]
+      x <- x[complete.cases(x), ]
+      y <- df[i, ]
+      y <- y[complete.cases(y), ]
+      ols.fit <- lm(formula = ret ~ open + close + low + high + vol + sma + ema + mmt + fastK + fastD + slowD + rsi + macd + lwr + adi + cci, data = x)
+      if(predict(ols.fit, y) > 0){
+        up = 1
+      }else{
+        up = -1
+      }
+      pred[nrow(pred) + 1, ] <- c(y$permno, up, y$ret)
+  }} else {
+      pred[nrow(pred) + 1, ] <- c(df[1,1], NA, NA)
+  }
+  pred
+}
+
 #### Test function.
 # df = crsp_cur[crsp_cur$gvkey==1177,]
 # reg_pred(df)
@@ -137,9 +179,6 @@ names(na_count) <- c("NA")
 jpeg(filename = "Report//Lab//NA_in_factors.jpg", width = 600)
 barplot(t(na_count))
 dev.off()
-
-# Final Subset to screen the stocks with 5 selected features.
-crsp_f <- subset(crsp, select = c(gvkey, date, mv, dvy, e2pfy0, b2p, s2ev))
 ```
 
 Main function for fundamental factor stock selection.
@@ -247,6 +286,7 @@ stock_num <- data.frame(
   qtr = integer(),
   num = integer()
 )
+
 for (y in years) {
   for (q in qtrs) {
     cur_ <- trans_YQ_to_date(y, q)
@@ -358,7 +398,6 @@ dev.off()
 Now we test our model in out of sample period.
 
 ```{r,warning=FALSE}
-
 
 # Now we could test our model, and store the results.
 out_sample <- data.frame(
@@ -598,6 +637,138 @@ barplot(pos_stk_num[order(pos_stk_num$Percentage),]$Percentage, border="black",
 abline(h = 0.5,col = "red",lty = 2, lwd = 2)
 dev.off()
 
+```
 
+Main function for fundamental factor technical stock trading.
+
+```{r}
+
+tech_trading <- function(df, yr, qtr, stk_list){
+
+  #### 1. Select out stocks available during certain period.
+  lkbk <- get_lkbk_period_tech(yr, qtr)
+  stk_list <- intersect(stk_list,unique(df$permno))
+  
+  tech_factors_cur <- subset(df, (df$permno %in% stk_list) 
+                             & (df$date > trans_YQ_to_date(lkbk[1], lkbk[2]))
+                             & (df$date <= trans_YQ_to_date(yr, qtr)))
+  
+  #### 2. Now we get the prediction of return in next quarter and actual return.
+  pred <- tech_factors_cur %>%
+    group_by(permno) %>%
+    do(reg_pred_tech(.))
+
+  # Now we get the prediction of return in next quarter and actual return.
+  # Thus we can evaluate the performance of our model.
+  pred
+}
+
+evaluate_prediction_tech <- function(df, yr, qtr, pred){
+  pred$mdl <- pred$pred*pred$actual
+  total_mdl <- pred %>%
+    group_by(permno) %>%
+    summarise(mdl = sum(mdl))
+  
+  total_bmk <- pred %>%
+    group_by(permno) %>%
+    summarise(bmk = sum(actual))
+  
+  total_mdl$bmk = total_bmk$bmk
+  
+  total_mdl$yr = yr
+  total_mdl$qtr = qtr
+  
+  total_mdl = total_mdl[,c('yr','qtr','permno','mdl','bmk')]
+  
+  total_mdl
+}
+
+# Construct portfolios according to fundamental screening.
+fundamental_to_tech <- function(tech_full, yr, qtr, fund_pred){
+  fund_pred <- fund_pred[with(fund_pred, order(pred)), ]
+  n <- as.integer(nrow(fund_pred) * 0.2)
+  long_list <- subset(link_key,(link_key$GVKEY %in% tail(fund_pred, n)$gvkey))
+  short_list <- subset(link_key,(link_key$GVKEY %in% head(fund_pred,n)$gvkey))
+  
+  long_pool <- subset(tech_full, (tech_full$permno %in% long_list$PERMNO) 
+                             & (tech_full$yr == yr)
+                             & (tech_full$qtr == qtr))
+  short_pool <- subset(tech_full, (tech_full$permno %in% short_list$PERMNO) 
+                             & (tech_full$yr == yr)
+                             & (tech_full$qtr == qtr))
+  mdl <- (mean(long_pool$mdl) - mean(short_pool$mdl))
+  bmk <- (mean(long_pool$bmk) - mean(short_pool$bmk))
+  c(yr, qtr, mdl,bmk)
+}
+
+```
+
+We test all available stocks' performance in test period and store them in an excel.
+
+```{r}
+
+out_sample_yrs <- c(2009:2018)
+qtrs <- c(1:4)
+
+res_tech <- data.frame(
+  yr = integer(), qtr = integer(),
+  permno = integer(), mdl = double(),
+  bmk = double()
+)
+
+for (y in out_sample_yrs) {
+  for (q in qtrs) {
+    pred <- tech_trading(tech_factors,2009,1,unique(tech_factors$permno))
+    evaluation <- evaluate_prediction_tech(res_tech, y, q, pred)
+    res_tech[(nrow(res_tech)+1):(nrow(res_tech)+nrow(evaluation)),] = evaluation
+  }
+}
+
+# We save the results thus we don't need to recalculate it everytime.
+writexl::write_xlsx(res_tech, path = "D:\\data\\Capstone\\Data\\Tech_test.xlsx", col_names = TRUE)
+```
+
+Combine fundamental and technical methods.
+
+```{r}
+res_tech <- readxl::read_xlsx("D:\\data\\Capstone\\Data\\Tech_test.xlsx")
+
+out_sample_yrs <- c(2009:2018)
+qtrs <- c(1:4)
+
+out_sample_v2 <- data.frame(
+  yr = integer(), qtr = integer(),
+  mdl = double(), bmk = double()
+)
+
+for (y in out_sample_yrs) {
+  for (q in qtrs) {
+    pred_yq <- screen_fundamental(y, q)
+    out_sample_v2[nrow(out_sample_v2) + 1, ] <- fundamental_to_tech(res_tech, y, q, pred_yq)
+  }
+} 
+
+# Plot the quarterly and cumulative return.
+tiff("Report//Lab//full_model.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample_v2, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = bmk, colour = "BMK")) + 
+  geom_line(aes(y = mdl, colour = "MDL")) + 
+  labs(x = "Time", y = "Quarterly return") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
+
+tiff("Report//Lab//full_model_cumu.jpg", units="in", width = 6, height = 4, res = 125)
+ggplot(out_sample_v2, aes(yr+0.25*qtr)) + 
+  geom_line(aes(y = cumsum(bmk), colour = "BMK")) + 
+  geom_line(aes(y = cumsum(mdl), colour = "MDL")) + 
+  labs(x = "Time", y = "Quarterly return") + 
+  ggtitle("Out sample test from 2009 to 2018") +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.background = element_rect(fill = "white",color = "black")) + 
+  scale_x_continuous(breaks= pretty_breaks())
+dev.off()
 ```
 
