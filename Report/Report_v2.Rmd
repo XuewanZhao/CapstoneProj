@@ -1,5 +1,7 @@
 ---
-title: "Report v2"
+title: |
+  | **Capstone Project:  **
+  | **Stock prediction by fundamental factors model and technical factors model **
 author: "Xuewan Zhao"
 date: '`r format(Sys.time(), "%m/%d/%Y")`'
 output:
@@ -15,6 +17,18 @@ header-includes: \usepackage{graphicx}
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+\ 
+
+\ 
+
+\ 
+
+\ 
+
+*I would like to express my deep gratitude to Professor Jerzy Pawlowski, my capstone project supervisor, for his patient guidance, enthusiastic encouragement and useful critiques of this research work. *
+
+\newpage
 
 In this project, we are going to combine fundamental factors and technical factors to construct portfolios. Fundamental factors are used to pick more predictable stocks. Then we would use technical factors to construct forecasting models in trading.
 
