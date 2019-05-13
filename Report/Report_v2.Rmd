@@ -197,8 +197,7 @@ $$
 
 After determine the estimations at time t using last 20 quarters' (5 year) data, we are going to forecast the return during time period *t* to *t+1*.
 
-
-###### To be continued: OLS vs Robust OLS vs WLS
+Here could be a topci further study about regression method optimization. For example, we can test to use Robust OLS, WLS instead of OLS, and compare the results. In weighted least squared model, return can be used as the weight. Stocks predicted to have higher return would be given higher weight.
 
 #### Technical factor model
 
@@ -234,8 +233,7 @@ CCI & Commodity Channel Index & \(\displaystyle \frac{(H_t+L_t+C_t)-3SMA_t}{0.04
 \end{threeparttable}
 \end{table}
 
-To be continued: Try to use return as weight? Or equal weighted?
-artificial neural network, support vector machines with polynomial and radial basis function kernels.
+Here could be a topic further study about other machine learning methods which could be used to construct model with these features. For example, artificial neural network, support vector machines with polynomial and radial basis function kernels.
 
 ### Stock screening
 
